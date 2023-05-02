@@ -3,7 +3,7 @@ import psycopg2
 
 # Database connection parameters
 conn_params = {
-    "dbname": "ShapeShift",
+    "dbname": "DataBlend",
     "user": "postgres",
     "password": "1234",
     "host": "localhost",
@@ -18,6 +18,7 @@ height_column = "height"
 weight_column = "weight"
 eye_color_column = "eye_color"
 
+        
 # Define UI panel
 class CharacterCreatorPanel(bpy.types.Panel):
     """Creates a Panel in the Object properties window"""
@@ -26,7 +27,7 @@ class CharacterCreatorPanel(bpy.types.Panel):
     bl_space_type = 'PROPERTIES'
     bl_region_type = 'WINDOW'
     bl_context = "object"
-
+        
     def draw(self, context):
         layout = self.layout
 
@@ -45,7 +46,7 @@ class CharacterCreatorPanel(bpy.types.Panel):
         col = read_box.column(align=True)
         col.label(text="Retrieve Character")
         row = col.row(align=True)
-        row.prop(context.scene, "update_id")
+        row.prop(context.scene, "retrieved_id")
         row.operator("object.read_character", text="", icon="FILE_REFRESH")
         col.separator()
         col.prop(context.scene, "retrieved_name", text="Name")
@@ -70,7 +71,8 @@ class CharacterCreatorPanel(bpy.types.Panel):
         col.label(text="Delete Character")
         col.prop(context.scene, "delete_id")
         col.operator("character_creator.delete_character")
-
+        
+        
 table_panel_timer = None    
 class MyAddonPanel(bpy.types.Panel):
     bl_idname = "OBJECT_PT_my_addon_panel"
@@ -137,10 +139,17 @@ class CreateCharacterOperator(bpy.types.Operator):
 
     def execute(self, context):
         name = context.scene.name
-        height = context.scene.height
-        weight = context.scene.weight
+        height = float(context.scene.height)
+        weight = float(context.scene.weight)
         eye_color = context.scene.eye_color
         create_character(name, height, weight, eye_color)
+        
+        # Clear the fields in the Object Properties panel
+        context.scene.name = ""
+        context.scene.height = 0.0
+        context.scene.weight = 0.0
+        context.scene.eye_color = ""
+        
         return {'FINISHED'}
 
 #Define read charcter operator
@@ -149,7 +158,7 @@ class ReadCharacterOperator(bpy.types.Operator):
     bl_label = "Read Character"
     
     def execute(self, context):
-        id = bpy.context.scene.update_id
+        id = bpy.context.scene.retrieved_id
         result = read_character(id)
         if result is not None:
             bpy.context.scene.retrieved_name = result[1]
@@ -159,6 +168,14 @@ class ReadCharacterOperator(bpy.types.Operator):
             self.report({'INFO'}, f"Retrieved character with ID {id}")
         else:
             self.report({'ERROR'}, f"Character with ID {id} not found")
+            
+#        # Clear the fields in the Object Properties panel
+#        #context.scene.update_id = 0
+#        context.scene.retrieved_name = ""
+#        context.scene.retrieved_height = 0.0
+#        context.scene.retrieved_weight = 0.0
+#        context.scene.retrieved_eye_color = ""
+        
         return {'FINISHED'}
 
 
@@ -175,6 +192,13 @@ class UpdateCharacterOperator(bpy.types.Operator):
         weight = context.scene.update_weight
         eye_color = context.scene.update_eye_color
         update_character(id, name=name, height=height, weight=weight, eye_color=eye_color)
+        
+        # Clear the fields in the Object Properties panel
+        context.scene.update_id = 0
+        context.scene.update_name = ""
+        context.scene.update_height = 0.0
+        context.scene.update_weight = 0.0
+        context.scene.update_eye_color = ""
         return {'FINISHED'}
 
 # Define delete character operator
@@ -186,6 +210,10 @@ class DeleteCharacterOperator(bpy.types.Operator):
     def execute(self, context):
         id = context.scene.delete_id
         delete_character(id)
+        
+        # Clear the fields in the Object Properties panel
+        context.scene.delete_id = 0
+        
         return {'FINISHED'}
 
 class ReloadTableOperator(bpy.types.Operator):
@@ -214,7 +242,6 @@ def register():
     bpy.utils.register_class(ReloadTableOperator)
     bpy.utils.register_class(ReloadTableInternalOperator)
 
-    
 
 #Unregister UI panel and operators
 def unregister():
@@ -238,6 +265,7 @@ def setup_properties():
     bpy.types.Scene.height = bpy.props.FloatProperty(name="Height")
     bpy.types.Scene.weight = bpy.props.FloatProperty(name="Weight")
     bpy.types.Scene.eye_color = bpy.props.StringProperty(name="Eye Color")
+    bpy.types.Scene.retrieved_id = bpy.props.IntProperty(name="ID")
     bpy.types.Scene.retrieved_name = bpy.props.StringProperty(name="Name")
     bpy.types.Scene.retrieved_height = bpy.props.FloatProperty(name="Height")
     bpy.types.Scene.retrieved_weight = bpy.props.FloatProperty(name="Weight")
