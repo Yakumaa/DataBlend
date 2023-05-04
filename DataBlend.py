@@ -44,6 +44,53 @@ cur.execute("""
         depth REAL
     )
 """)
+# Delete an object and its related records
+def delete_object(object_id):
+    try:
+        # Delete location records
+        cur.execute("DELETE FROM Location WHERE object_id = %s", (object_id,))
+    except psycopg2.errors.ForeignKeyViolation:
+        # Handle case where there are no records to delete
+        pass
+
+    try:
+        # Delete dimension records
+        cur.execute("DELETE FROM Dimension WHERE object_id = %s", (object_id,))
+    except psycopg2.errors.ForeignKeyViolation:
+        # Handle case where there are no records to delete
+        pass
+
+    # Delete object record
+    cur.execute("DELETE FROM Object WHERE id = %s", (object_id,))
+    
+# Define function to delete object data from database
+def delete_object_data(object):
+    conn = psycopg2.connect(**conn_params)
+    cur = conn.cursor()
+    
+    # Get object ID
+    cur.execute("SELECT id FROM Object WHERE name = %s", (object.name,))
+    object_id = cur.fetchone()[0]
+    
+    # Delete object data from all tables
+    
+    cur.execute("DELETE FROM Location WHERE object_id = %s", (object_id,))
+    cur.execute("DELETE FROM Dimension WHERE object_id = %s", (object_id,))
+    cur.execute("DELETE FROM Object WHERE id = %s", (object_id,))
+    
+    # Commit changes and close connection
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Register handler function to delete object data when an object is deleted in Blender
+def delete_object_data_handler(scene):
+    for object in bpy.context.selected_objects:
+        if object.type == 'MESH':
+            delete_object_data(object)
+
+# Register the handler function
+bpy.app.handlers.depsgraph_update_post.append(delete_object_data_handler)
 
 # Iterate through objects
 for obj in bpy.context.scene.objects:
@@ -53,22 +100,28 @@ for obj in bpy.context.scene.objects:
     name = obj.name
     vertex_count = len(obj.data.vertices)
 
-    # Insert object data into Object table
+    # Insert or update object data in Object table
     cur.execute("""
         INSERT INTO Object (name, vertex_count)
         VALUES (%s, %s)
-        ON CONFLICT (name) DO NOTHING
-    """, (name, vertex_count))
-
-    # Get object ID
-    cur.execute("SELECT id FROM Object WHERE name = %s", (name,))
+        ON CONFLICT (name) DO UPDATE
+        SET vertex_count = %s
+        RETURNING id
+    """, (name, vertex_count, vertex_count))
     object_id = cur.fetchone()[0]
+
+    # Get current location and dimensions data from database
+    cur.execute("SELECT x, y, z FROM Location WHERE object_id = %s", (object_id,))
+    loc_row = cur.fetchone()
+    cur.execute("SELECT width, height, depth FROM Dimension WHERE object_id = %s", (object_id,))
+    dim_row = cur.fetchone()
 
     # Insert location data into Location table
     loc = obj.location
     cur.execute("""
         INSERT INTO Location (object_id, x, y, z)
         VALUES (%s, %s, %s, %s)
+        ON CONFLICT (object_id) DO UPDATE SET x = EXCLUDED.x, y = EXCLUDED.y, z = EXCLUDED.z
     """, (object_id, loc.x, loc.y, loc.z))
 
     # Insert dimension data into Dimension table
@@ -76,12 +129,12 @@ for obj in bpy.context.scene.objects:
     cur.execute("""
         INSERT INTO Dimension (object_id, width, height, depth)
         VALUES (%s, %s, %s, %s)
+        ON CONFLICT (object_id) DO UPDATE SET width = EXCLUDED.width, height = EXCLUDED.height, depth = EXCLUDED.depth
     """, (object_id, dim.x, dim.y, dim.z))
 
-# Commit changes to database
-conn.commit()
 
-# Close database connection
+# Commit changes and close connection
+conn.commit()
 cur.close()
 conn.close()
 
@@ -104,26 +157,19 @@ class MyAddonPanel(bpy.types.Panel):
         conn = psycopg2.connect(**conn_params)
         cur = conn.cursor()
         cur.execute("""
-            SELECT
-                o.id,
-                o.name,
-                o.vertex_count,
-                l.x,
-                l.y,
-                l.z,
-                d.width,
-                d.height,
-                d.depth
-            FROM
-                object o
-                JOIN location l ON o.id = l.object_id
-                JOIN dimension d ON o.id = d.object_id
+            SELECT Object.id, Object.name, Object.vertex_count, Location.x, Location.y, Location.z,
+            Dimension.width, Dimension.height, Dimension.depth
+            FROM Object
+            LEFT JOIN Location ON Object.id = Location.object_id
+            LEFT JOIN Dimension ON Object.id = Dimension.object_id
         """)
         rows = cur.fetchall()
+        
+        if not rows:
+            return
 
         # Create a list of column widths based on the maximum width of each field
-        col_widths = [max(len(str(row[i])) for row in rows)
-                      for i in range(len(rows[0]))]
+        col_widths = [max(len(str(row[i])) for row in rows) for i in range(len(rows[0]))]
 
         # Add the header row with the column names
         header_row = layout.row()
@@ -182,6 +228,7 @@ class ReloadTableInternalOperator(bpy.types.Operator):
 
 def register():
     bpy.utils.register_class(MyAddonPanel)
+    bpy.app.handlers.depsgraph_update_post.append(delete_object_data_handler)
     bpy.utils.register_class(ReloadTableOperator)
     bpy.utils.register_class(ReloadTableInternalOperator)
 
