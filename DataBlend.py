@@ -44,53 +44,6 @@ cur.execute("""
         depth REAL
     )
 """)
-# Delete an object and its related records
-def delete_object(object_id):
-    try:
-        # Delete location records
-        cur.execute("DELETE FROM Location WHERE object_id = %s", (object_id,))
-    except psycopg2.errors.ForeignKeyViolation:
-        # Handle case where there are no records to delete
-        pass
-
-    try:
-        # Delete dimension records
-        cur.execute("DELETE FROM Dimension WHERE object_id = %s", (object_id,))
-    except psycopg2.errors.ForeignKeyViolation:
-        # Handle case where there are no records to delete
-        pass
-
-    # Delete object record
-    cur.execute("DELETE FROM Object WHERE id = %s", (object_id,))
-    
-# Define function to delete object data from database
-def delete_object_data(object):
-    conn = psycopg2.connect(**conn_params)
-    cur = conn.cursor()
-    
-    # Get object ID
-    cur.execute("SELECT id FROM Object WHERE name = %s", (object.name,))
-    object_id = cur.fetchone()[0]
-    
-    # Delete object data from all tables
-    
-    cur.execute("DELETE FROM Location WHERE object_id = %s", (object_id,))
-    cur.execute("DELETE FROM Dimension WHERE object_id = %s", (object_id,))
-    cur.execute("DELETE FROM Object WHERE id = %s", (object_id,))
-    
-    # Commit changes and close connection
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# Register handler function to delete object data when an object is deleted in Blender
-def delete_object_data_handler(scene):
-    for object in bpy.context.selected_objects:
-        if object.type == 'MESH':
-            delete_object_data(object)
-
-# Register the handler function
-bpy.app.handlers.depsgraph_update_post.append(delete_object_data_handler)
 
 # Iterate through objects
 for obj in bpy.context.scene.objects:
@@ -137,6 +90,32 @@ for obj in bpy.context.scene.objects:
 conn.commit()
 cur.close()
 conn.close()
+
+# Define handler function to delete object and its data from database when deleted in Blender viewport
+def object_delete_handler(scene):
+    # Get list of object names in Blender viewport
+    object_names = [obj.name for obj in bpy.context.scene.objects if obj.type == 'MESH']
+
+    # Connect to database and get list of object names in database
+    conn = psycopg2.connect(**conn_params)
+    cur = conn.cursor()
+    cur.execute("SELECT name FROM Object")
+    db_object_names = [row[0] for row in cur.fetchall()]
+
+    # Delete objects from database if they do not exist in Blender viewport
+    for name in db_object_names:
+        if name not in object_names:
+            cur.execute("DELETE FROM Location WHERE object_id = (SELECT id FROM Object WHERE name = %s)", (name,))
+            cur.execute("DELETE FROM Dimension WHERE object_id = (SELECT id FROM Object WHERE name = %s)", (name,))
+            cur.execute("DELETE FROM Object WHERE name = %s", (name,))
+
+    # Commit changes and close connection
+    conn.commit()
+    cur.close()
+    conn.close()
+
+# Register object_delete_handler to run on object delete in Blender viewport
+bpy.app.handlers.depsgraph_update_post.append(object_delete_handler)
 
 
 # Define UI panel
@@ -228,7 +207,6 @@ class ReloadTableInternalOperator(bpy.types.Operator):
 
 def register():
     bpy.utils.register_class(MyAddonPanel)
-    bpy.app.handlers.depsgraph_update_post.append(delete_object_data_handler)
     bpy.utils.register_class(ReloadTableOperator)
     bpy.utils.register_class(ReloadTableInternalOperator)
 
