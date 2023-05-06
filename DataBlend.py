@@ -110,10 +110,6 @@ bpy.app.handlers.depsgraph_update_post.append(object_delete_handler)
 
 
 # Define UI panel
-
-table_panel_timer = None
-
-
 class MyAddonPanel(bpy.types.Panel):
     bl_idname = "OBJECT_PT_my_addon_panel"
     bl_label = "My Addon Panel"
@@ -122,7 +118,6 @@ class MyAddonPanel(bpy.types.Panel):
     bl_category = "DataBlend"
 
     def draw(self, context):
-        global table_panel_timer
         layout = self.layout
         conn = psycopg2.connect(**conn_params)
         cur = conn.cursor()
@@ -163,56 +158,14 @@ class MyAddonPanel(bpy.types.Panel):
             for i in range(len(row)):
                 data_row.label(text=str(row[i]).ljust(col_widths[i]))
 
-#        # Add the reload button
-#        layout.separator()
-#        layout.operator("object.reload_table",
-#                        text="Reload", icon="FILE_REFRESH")
-
-#        if table_panel_timer is None:
-#            table_panel_timer = bpy.app.timers.register(self.timer_callback)
-
-#    def timer_callback(self):
-#        # Call the internal operator to reload the table data
-#        bpy.ops.object.reload_table_internal()
-#        return 0.1
-
-
-#class ReloadTableOperator(bpy.types.Operator):
-#    bl_idname = "object.reload_table"
-#    bl_label = "Reload Table"
-
-#    def execute(self, context):
-#        bpy.ops.object.reload_table_internal()
-#        return {'FINISHED'}
-
-
-#class ReloadTableInternalOperator(bpy.types.Operator):
-#    bl_idname = "object.reload_table_internal"
-#    bl_label = "Reload Table Internal"
-
-#    def execute(self, context):
-#        return {'FINISHED'}
-
-# Register UI panel and operators
-
 
 def register():
     bpy.utils.register_class(MyAddonPanel)
-#    bpy.utils.register_class(ReloadTableOperator)
-#    bpy.utils.register_class(ReloadTableInternalOperator)
 
 
 # Unregister UI panel and operators
 def unregister():
     bpy.utils.unregister_class(MyAddonPanel)
-#    bpy.utils.unregister_class(ReloadTableOperator)
-#    bpy.utils.unregister_class(ReloadTableInternalOperator)
-
-#    global table_panel_timer
-#    if table_panel_timer is not None:
-#        bpy.app.timers.unregister(table_panel_timer)
-#        table_panel_timer = None
-
 
 
 # Set up properties and register UI panel and operators
