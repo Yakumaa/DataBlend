@@ -29,7 +29,7 @@ cur.execute("""
 cur.execute("""
     CREATE TABLE IF NOT EXISTS Location (
         id SERIAL PRIMARY KEY,
-        object_id INT REFERENCES Object(id),
+        object_id INT REFERENCES Object(id) ON DELETE CASCADE,
         x REAL,
         y REAL,
         z REAL
@@ -38,7 +38,7 @@ cur.execute("""
 cur.execute("""
     CREATE TABLE IF NOT EXISTS Dimension (
         id SERIAL PRIMARY KEY,
-        object_id INT REFERENCES Object(id),
+        object_id INT REFERENCES Object(id) ON DELETE CASCADE,
         width REAL,
         height REAL,
         depth REAL
