@@ -45,74 +45,65 @@ cur.execute("""
     )
 """)
 
-# Iterate through objects
-for obj in bpy.context.scene.objects:
-    if obj.type != 'MESH':
-        continue
+# Define handler function to update object and its data from database when updated in Blender
+def update_database(scene):
+    for obj in bpy.context.scene.objects:
+        if obj.type != 'MESH':
+            continue
 
-    name = obj.name
-    vertex_count = len(obj.data.vertices)
+        name = obj.name
+        vertex_count = len(obj.data.vertices)
 
-    # Insert or update object data in Object table
-    cur.execute("""
-        INSERT INTO Object (name, vertex_count)
-        VALUES (%s, %s)
-        ON CONFLICT (name) DO UPDATE
-        SET vertex_count = %s
-        RETURNING id
-    """, (name, vertex_count, vertex_count))
-    object_id = cur.fetchone()[0]
+        # Insert or update object data in Object table
+        cur.execute("""
+            INSERT INTO Object (name, vertex_count)
+            VALUES (%s, %s)
+            ON CONFLICT (name) DO UPDATE
+            SET vertex_count = %s
+            RETURNING id
+        """, (name, vertex_count, vertex_count))
+        object_id = cur.fetchone()[0]
 
-    # Get current location and dimensions data from database
-    cur.execute("SELECT x, y, z FROM Location WHERE object_id = %s", (object_id,))
-    loc_row = cur.fetchone()
-    cur.execute("SELECT width, height, depth FROM Dimension WHERE object_id = %s", (object_id,))
-    dim_row = cur.fetchone()
+        # Get current location and dimensions data from database
+        cur.execute("SELECT x, y, z FROM Location WHERE object_id = %s", (object_id,))
+        loc_row = cur.fetchone()
+        cur.execute("SELECT width, height, depth FROM Dimension WHERE object_id = %s", (object_id,))
+        dim_row = cur.fetchone()
 
-    # Insert location data into Location table
-    loc = obj.location
-    cur.execute("""
-        INSERT INTO Location (object_id, x, y, z)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (object_id) DO UPDATE SET x = EXCLUDED.x, y = EXCLUDED.y, z = EXCLUDED.z
-    """, (object_id, loc.x, loc.y, loc.z))
+        # Insert location data into Location table
+        loc = obj.location
+        cur.execute("""
+            INSERT INTO Location (object_id, x, y, z)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (object_id) DO UPDATE SET x = EXCLUDED.x, y = EXCLUDED.y, z = EXCLUDED.z
+        """, (object_id, loc.x, loc.y, loc.z))
 
-    # Insert dimension data into Dimension table
-    dim = obj.dimensions
-    cur.execute("""
-        INSERT INTO Dimension (object_id, width, height, depth)
-        VALUES (%s, %s, %s, %s)
-        ON CONFLICT (object_id) DO UPDATE SET width = EXCLUDED.width, height = EXCLUDED.height, depth = EXCLUDED.depth
-    """, (object_id, dim.x, dim.y, dim.z))
+        # Insert dimension data into Dimension table
+        dim = obj.dimensions
+        cur.execute("""
+            INSERT INTO Dimension (object_id, width, height, depth)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (object_id) DO UPDATE SET width = EXCLUDED.width, height = EXCLUDED.height, depth = EXCLUDED.depth
+        """, (object_id, dim.x, dim.y, dim.z))
+        
+    conn.commit()
 
-
-# Commit changes and close connection
-conn.commit()
-cur.close()
-conn.close()
+# Register the handler function
+bpy.app.handlers.depsgraph_update_post.append(update_database)
 
 # Define handler function to delete object and its data from database when deleted in Blender viewport
 def object_delete_handler(scene):
-    # Get list of object names in Blender viewport
-    object_names = [obj.name for obj in bpy.context.scene.objects if obj.type == 'MESH']
-
-    # Connect to database and get list of object names in database
-    conn = psycopg2.connect(**conn_params)
-    cur = conn.cursor()
-    cur.execute("SELECT name FROM Object")
-    db_object_names = [row[0] for row in cur.fetchall()]
-
-    # Delete objects from database if they do not exist in Blender viewport
-    for name in db_object_names:
-        if name not in object_names:
-            cur.execute("DELETE FROM Location WHERE object_id = (SELECT id FROM Object WHERE name = %s)", (name,))
-            cur.execute("DELETE FROM Dimension WHERE object_id = (SELECT id FROM Object WHERE name = %s)", (name,))
-            cur.execute("DELETE FROM Object WHERE name = %s", (name,))
-
-    # Commit changes and close connection
+    cur.execute("SELECT id, name FROM Object")
+    rows = cur.fetchall()
+    for row in rows:
+        obj_id = row[0]
+        obj_name = row[1]
+        if bpy.data.objects.get(obj_name) is None:
+            cur.execute("DELETE FROM Location WHERE object_id = %s", (obj_id,))
+            cur.execute("DELETE FROM Dimension WHERE object_id = %s", (obj_id,))
+            cur.execute("DELETE FROM Object WHERE id = %s", (obj_id,))
+    
     conn.commit()
-    cur.close()
-    conn.close()
 
 # Register object_delete_handler to run on object delete in Blender viewport
 bpy.app.handlers.depsgraph_update_post.append(object_delete_handler)
@@ -172,55 +163,55 @@ class MyAddonPanel(bpy.types.Panel):
             for i in range(len(row)):
                 data_row.label(text=str(row[i]).ljust(col_widths[i]))
 
-        # Add the reload button
-        layout.separator()
-        layout.operator("object.reload_table",
-                        text="Reload", icon="FILE_REFRESH")
+#        # Add the reload button
+#        layout.separator()
+#        layout.operator("object.reload_table",
+#                        text="Reload", icon="FILE_REFRESH")
 
-        if table_panel_timer is None:
-            table_panel_timer = bpy.app.timers.register(self.timer_callback)
+#        if table_panel_timer is None:
+#            table_panel_timer = bpy.app.timers.register(self.timer_callback)
 
-    def timer_callback(self):
-        # Call the internal operator to reload the table data
-        bpy.ops.object.reload_table_internal()
-        return 0.1
-
-
-class ReloadTableOperator(bpy.types.Operator):
-    bl_idname = "object.reload_table"
-    bl_label = "Reload Table"
-
-    def execute(self, context):
-        bpy.ops.object.reload_table_internal()
-        return {'FINISHED'}
+#    def timer_callback(self):
+#        # Call the internal operator to reload the table data
+#        bpy.ops.object.reload_table_internal()
+#        return 0.1
 
 
-class ReloadTableInternalOperator(bpy.types.Operator):
-    bl_idname = "object.reload_table_internal"
-    bl_label = "Reload Table Internal"
+#class ReloadTableOperator(bpy.types.Operator):
+#    bl_idname = "object.reload_table"
+#    bl_label = "Reload Table"
 
-    def execute(self, context):
-        return {'FINISHED'}
+#    def execute(self, context):
+#        bpy.ops.object.reload_table_internal()
+#        return {'FINISHED'}
+
+
+#class ReloadTableInternalOperator(bpy.types.Operator):
+#    bl_idname = "object.reload_table_internal"
+#    bl_label = "Reload Table Internal"
+
+#    def execute(self, context):
+#        return {'FINISHED'}
 
 # Register UI panel and operators
 
 
 def register():
     bpy.utils.register_class(MyAddonPanel)
-    bpy.utils.register_class(ReloadTableOperator)
-    bpy.utils.register_class(ReloadTableInternalOperator)
+#    bpy.utils.register_class(ReloadTableOperator)
+#    bpy.utils.register_class(ReloadTableInternalOperator)
 
 
 # Unregister UI panel and operators
 def unregister():
     bpy.utils.unregister_class(MyAddonPanel)
-    bpy.utils.unregister_class(ReloadTableOperator)
-    bpy.utils.unregister_class(ReloadTableInternalOperator)
+#    bpy.utils.unregister_class(ReloadTableOperator)
+#    bpy.utils.unregister_class(ReloadTableInternalOperator)
 
-    global table_panel_timer
-    if table_panel_timer is not None:
-        bpy.app.timers.unregister(table_panel_timer)
-        table_panel_timer = None
+#    global table_panel_timer
+#    if table_panel_timer is not None:
+#        bpy.app.timers.unregister(table_panel_timer)
+#        table_panel_timer = None
 
 
 
