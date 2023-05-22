@@ -1,5 +1,7 @@
 # DataBlend
 
+<p align="center"><img src="datablend.png" width="100" height="100"></p>
+
 DataBlend is a tool that allows users to automatically store and retrieve data about Blender objects in a PostgreSQL database. The tool uses Python and the psycopg2 library to connect to the database, and stores information such as object name, vertex count, location, and dimensions. Users can easily update and delete object data from within Blender and see those changes reflected in the database.
 
 This tool is useful for artists and developers who want to store and organize large amounts of object data, such as in a game development pipeline. By automatically updating the database, users can easily keep track of changes to their objects and make informed decisions about their workflow.
